@@ -1,0 +1,29 @@
+length = float(input("Enter the length of the rectangle: "))
+width = float(input("Enter the width of the rectangle: "))
+
+area = length * width
+
+print("Area of the rectangle:", area)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+side = float(input("Enter the side length of the square: "))
+
+area = side * side
+
+print(f"Area of the square: {area}")
