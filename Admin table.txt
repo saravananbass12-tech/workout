@@ -1,0 +1,99 @@
+-- Admin table
+CREATE TABLE IF NOT EXISTS admin (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(100),
+    email VARCHAR(100),
+    signature VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Students table
+CREATE TABLE IF NOT EXISTS students (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    reg_no VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    department VARCHAR(50) NOT NULL,
+    class_level VARCHAR(20) NOT NULL,
+    year_of_study INT NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(15),
+    photo VARCHAR(255),
+    id_card_photo VARCHAR(255),
+    password VARCHAR(255) NOT NULL,
+    status ENUM('pending','active','blocked') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Events table
+CREATE TABLE IF NOT EXISTS events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    event_date DATE NOT NULL,
+    venue VARCHAR(100),
+    max_participants INT DEFAULT 100,
+    created_by INT,
+    status ENUM('upcoming','ongoing','completed') DEFAULT 'upcoming',
+    event_poster VARCHAR(255),
+    event_schedule VARCHAR(255),
+    event_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES admin(id) ON DELETE SET NULL
+);
+
+-- Registrations table
+CREATE TABLE IF NOT EXISTS registrations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    event_id INT NOT NULL,
+    student_id INT NOT NULL,
+    registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    status ENUM('pending','approved','rejected') DEFAULT 'approved',
+    attendance_status ENUM('present','absent','late','not_marked') DEFAULT 'not_marked',
+    certificate_issued BOOLEAN DEFAULT FALSE,
+    certificate_no VARCHAR(50) UNIQUE,
+    certificate_issued_date DATE,
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_registration (event_id, student_id)
+);
+
+-- Attendance table
+CREATE TABLE IF NOT EXISTS attendance (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    event_id INT NOT NULL,
+    student_id INT NOT NULL,
+    marked_date DATE NOT NULL,
+    marked_time TIME DEFAULT CURRENT_TIMESTAMP,
+    status ENUM('present','absent','late') DEFAULT 'present',
+    remarks VARCHAR(255),
+    marked_by INT,
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (marked_by) REFERENCES admin(id) ON DELETE SET NULL,
+    UNIQUE KEY unique_attendance (event_id, student_id, marked_date)
+);
+
+-- Certificates table
+CREATE TABLE IF NOT EXISTS certificates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    registration_id INT NOT NULL,
+    event_id INT NOT NULL,
+    student_id INT NOT NULL,
+    certificate_no VARCHAR(50) UNIQUE NOT NULL,
+    issue_date DATE NOT NULL,
+    file_path VARCHAR(255),
+    verification_code VARCHAR(100) UNIQUE,
+    issued_by INT,
+    hod_signature VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (registration_id) REFERENCES registrations(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+    FOREIGN KEY (issued_by) REFERENCES admin(id) ON DELETE SET NULL
+);
+
+-- Insert Default Admin
+INSERT INTO admin (username, password, full_name, email) 
+VALUES ('thiru', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Thiru Administrator', 'thiru@college.edu');
