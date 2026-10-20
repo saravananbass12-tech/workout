@@ -1,0 +1,382 @@
+import cv2
+import mediapipe as mp
+import numpy as np
+
+# ==========================================
+# FULL HD WEBCAM SETTINGS
+# ==========================================
+
+WIDTH, HEIGHT = 1920, 1080
+
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+# Request Full HD resolution
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
+cap.set(cv2.CAP_PROP_FPS, 30)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+if not cap.isOpened():
+    print("Error: Webcam not found!")
+    exit()
+
+# Check actual camera resolution
+actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+print("AI VIRTUAL PAINTER")
+print("------------------------------")
+print(f"Requested Resolution: {WIDTH} x {HEIGHT}")
+print(f"Actual Camera Resolution: {actual_width} x {actual_height}")
+print("------------------------------")
+
+# ==========================================
+# FULL HD DRAWING CANVAS
+# ==========================================
+
+canvas = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
+
+# ==========================================
+# MEDIAPIPE HAND TRACKING
+# ==========================================
+
+mp_hands = mp.solutions.hands
+mp_draw = mp.solutions.drawing_utils
+
+hands = mp_hands.Hands(
+    static_image_mode=False,
+    max_num_hands=1,
+    model_complexity=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
+)
+
+# ==========================================
+# COLOUR TOOLBAR - BGR FORMAT
+# ==========================================
+
+colors = [
+    ("RED", (0, 0, 255)),
+    ("BLUE", (255, 0, 0)),
+    ("GREEN", (0, 255, 0)),
+    ("YELLOW", (0, 255, 255)),
+    ("PURPLE", (255, 0, 255)),
+    ("ERASER", (0, 0, 0))
+]
+
+current_color = colors[0][1]
+current_name = colors[0][0]
+
+brush_size = 8
+eraser_size = 40
+
+prev_x, prev_y = 0, 0
+
+
+# ==========================================
+# FINGER DETECTION
+# ==========================================
+
+def fingers_up(hand_landmarks):
+    lm = hand_landmarks.landmark
+
+    index_up = lm[8].y < lm[6].y
+    middle_up = lm[12].y < lm[10].y
+
+    return index_up, middle_up
+
+
+# ==========================================
+# MAIN LOOP
+# ==========================================
+
+while True:
+
+    success, frame = cap.read()
+
+    if not success:
+        print("Cannot read webcam!")
+        break
+
+    # Mirror camera
+    frame = cv2.flip(frame, 1)
+
+    # Resize camera frame to Full HD
+    frame = cv2.resize(frame, (WIDTH, HEIGHT))
+
+    # ======================================
+    # COLOUR TOOLBAR
+    # ======================================
+
+    toolbar_height = 100
+
+    for i, (name, color) in enumerate(colors):
+
+        x1 = i * WIDTH // len(colors)
+        x2 = (i + 1) * WIDTH // len(colors)
+
+        cv2.rectangle(
+            frame,
+            (x1, 0),
+            (x2, toolbar_height),
+            color,
+            -1
+        )
+
+        text_color = (
+            (0, 0, 0)
+            if name in ["YELLOW", "ERASER"]
+            else (255, 255, 255)
+        )
+
+        cv2.putText(
+            frame,
+            name,
+            (x1 + 35, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            text_color,
+            2,
+            cv2.LINE_AA
+        )
+
+        # Highlight selected colour
+        if current_name == name:
+
+            cv2.rectangle(
+                frame,
+                (x1 + 5, 5),
+                (x2 - 5, toolbar_height - 5),
+                (255, 255, 255),
+                3
+            )
+
+    # ======================================
+    # HAND DETECTION
+    # ======================================
+
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    results = hands.process(rgb)
+
+    if results.multi_hand_landmarks:
+
+        hand = results.multi_hand_landmarks[0]
+
+        mp_draw.draw_landmarks(
+            frame,
+            hand,
+            mp_hands.HAND_CONNECTIONS
+        )
+
+        lm = hand.landmark
+
+        # Index fingertip position
+        x = int(lm[8].x * WIDTH)
+        y = int(lm[8].y * HEIGHT)
+
+        # Keep coordinates within canvas
+        x = max(0, min(x, WIDTH - 1))
+        y = max(0, min(y, HEIGHT - 1))
+
+        index_up, middle_up = fingers_up(hand)
+
+        # ==================================
+        # SELECT COLOUR
+        # ==================================
+
+        if index_up and middle_up and y < toolbar_height:
+
+            selected = min(
+                x * len(colors) // WIDTH,
+                len(colors) - 1
+            )
+
+            current_name, current_color = colors[selected]
+
+            prev_x, prev_y = 0, 0
+
+        # ==================================
+        # DRAW USING INDEX FINGER
+        # ==================================
+
+        elif index_up and not middle_up and y >= toolbar_height:
+
+            size = (
+                eraser_size
+                if current_name == "ERASER"
+                else brush_size
+            )
+
+            if prev_x == 0 and prev_y == 0:
+
+                prev_x, prev_y = x, y
+
+            cv2.line(
+                canvas,
+                (prev_x, prev_y),
+                (x, y),
+                current_color,
+                size,
+                cv2.LINE_AA
+            )
+
+            prev_x, prev_y = x, y
+
+        else:
+
+            prev_x, prev_y = 0, 0
+
+        # Fingertip cursor
+        cv2.circle(
+            frame,
+            (x, y),
+            12,
+            current_color,
+            -1
+        )
+
+    else:
+
+        prev_x, prev_y = 0, 0
+
+    # ======================================
+    # COMBINE CANVAS AND WEBCAM
+    # ======================================
+
+    gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
+
+    _, mask = cv2.threshold(
+        gray,
+        10,
+        255,
+        cv2.THRESH_BINARY
+    )
+
+    inverse_mask = cv2.bitwise_not(mask)
+
+    background = cv2.bitwise_and(
+        frame,
+        frame,
+        mask=inverse_mask
+    )
+
+    drawing = cv2.bitwise_and(
+        canvas,
+        canvas,
+        mask=mask
+    )
+
+    output = cv2.add(background, drawing)
+
+    # ======================================
+    # INFORMATION DISPLAY
+    # ======================================
+
+    cv2.putText(
+        output,
+        "AI VIRTUAL PAINTER | FULL HD 1080p",
+        (30, 155),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.0,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    cv2.putText(
+        output,
+        f"Selected: {current_name}",
+        (30, 205),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    cv2.putText(
+        output,
+        f"Canvas: {WIDTH} x {HEIGHT}",
+        (30, 250),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    cv2.putText(
+        output,
+        "C: Clear | S: Save PNG | Q: Exit",
+        (30, HEIGHT - 30),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA
+    )
+
+    # ======================================
+    # DISPLAY FULL HD WINDOW
+    # ======================================
+
+    cv2.namedWindow(
+        "AI Virtual Painter - Full HD 1080p",
+        cv2.WINDOW_NORMAL
+    )
+
+    cv2.resizeWindow(
+        "AI Virtual Painter - Full HD 1080p",
+        WIDTH,
+        HEIGHT
+    )
+
+    cv2.imshow(
+        "AI Virtual Painter - Full HD 1080p",
+        output
+    )
+
+    # ======================================
+    # KEYBOARD CONTROLS
+    # ======================================
+
+    key = cv2.waitKey(1) & 0xFF
+
+    # Clear drawing
+    if key == ord("c"):
+
+        canvas = np.zeros(
+            (HEIGHT, WIDTH, 3),
+            dtype=np.uint8
+        )
+
+        prev_x, prev_y = 0, 0
+
+        print("Canvas cleared!")
+
+    # Save drawing
+    elif key == ord("s"):
+
+        filename = "my_drawing_1080p.png"
+
+        cv2.imwrite(filename, canvas)
+
+        print(f"Drawing saved: {filename}")
+        print(f"Image resolution: {WIDTH} x {HEIGHT}")
+
+    # Exit application
+    elif key == ord("q"):
+
+        break
+
+
+# ==========================================
+# RELEASE RESOURCES
+# ==========================================
+
+cap.release()
+hands.close()
+cv2.destroyAllWindows()
+
+print("AI Virtual Painter closed.")
